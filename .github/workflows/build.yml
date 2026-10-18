@@ -37,17 +37,43 @@ jobs:
       - name: Generiši Android projekat
         run: flutter create --platforms=android --project-name rezije .
 
-      # 4b. Postavi Android SDK verzije (paketi read_pdf_text/PDFBox i
-      #     file_picker traže novije minSdk/compileSdk). Zamjenjujemo
-      #     Flutter placeholdere fiksnim vrijednostima u build.gradle.kts.
+      # 4b. Postavi Android SDK verzije.
+      #     - U app modulu zamijeni Flutter placeholdere.
+      #     - Dodaj skriptu (apply from) koja SVIM pluginima nametne
+      #       compileSdk 36 / minSdk 23 (file_picker, sqflite... znaju
+      #       ciljati stariji compileSdk pa build pukne).
       - name: Podesi Android SDK verzije
         run: |
-          GRADLE=android/app/build.gradle.kts
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' "$GRADLE"
-          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$GRADLE"
-          sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' "$GRADLE"
-          echo "----- build.gradle.kts (android blok) -----"
-          sed -n '1,60p' "$GRADLE"
+          APP=android/app/build.gradle.kts
+          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' "$APP"
+          sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$APP"
+          sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' "$APP"
+
+          # Groovy skripta za override svih podprojekata (plugina).
+          # Pišemo je redom (bez heredoc-a) da izbjegnemo probleme s
+          # indentacijom YAML bloka.
+          SO=android/sdk_override.gradle
+          : > "$SO"
+          echo 'subprojects {'                                      >> "$SO"
+          echo '    afterEvaluate { proj ->'                        >> "$SO"
+          echo "        if (proj.hasProperty('android')) {"         >> "$SO"
+          echo '            proj.android {'                         >> "$SO"
+          echo '                compileSdkVersion 36'               >> "$SO"
+          echo '                if (defaultConfig.minSdkVersion == null || defaultConfig.minSdkVersion.apiLevel < 23) {' >> "$SO"
+          echo '                    defaultConfig.minSdkVersion 23'  >> "$SO"
+          echo '                }'                                  >> "$SO"
+          echo '            }'                                      >> "$SO"
+          echo '        }'                                          >> "$SO"
+          echo '    }'                                              >> "$SO"
+          echo '}'                                                  >> "$SO"
+
+          # Poveži skriptu iz root build.gradle.kts.
+          printf '\napply(from = "sdk_override.gradle")\n' >> android/build.gradle.kts
+
+          echo "----- sdk_override.gradle -----"
+          cat "$SO"
+          echo "----- kraj root build.gradle.kts -----"
+          tail -n 5 android/build.gradle.kts
 
       # 5. Preuzmi pakete (dependencies)
       - name: Preuzmi pakete
