@@ -41,13 +41,14 @@ jobs:
       - name: Preuzmi pakete
         run: flutter pub get
 
-      # 6. Provjeri kod (ne prekida build ako ima samo upozorenja)
+      # 6. Provjeri kod. Privremeno BEZ "|| true" da vidimo tačne greške
+      #    ako ih ima (analyze ispisuje fajl, liniju i opis problema).
       - name: Analiziraj kod
-        run: flutter analyze || true
+        run: flutter analyze
 
-      # 7. Napravi release APK
+      # 7. Napravi release APK (verbose radi jasnije greške)
       - name: Napravi APK
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       # 8. Okači APK kao artefakt da ga možeš skinuti sa GitHub-a
       - name: Okači APK
