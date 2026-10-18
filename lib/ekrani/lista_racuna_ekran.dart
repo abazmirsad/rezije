@@ -239,6 +239,17 @@ class _RacunKartica extends StatelessWidget {
                       ),
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (racun.pozivNaBroj.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Poziv: ${racun.pozivNaBroj}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppTema.tekstSivi,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     _StatusOznaka(racun: racun),
                   ],
@@ -248,13 +259,23 @@ class _RacunKartica extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
+                  // Istaknut iznos za uplatu (trenutno stanje).
                   Text(
-                    Format.novac(racun.iznos),
+                    Format.novac(racun.zaUplatu),
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
                     ),
                   ),
+                  // Ako se za uplatu razlikuje od mjesečnog, prikaži mjesečni.
+                  if (racun.imaRazlikuStanja)
+                    Text(
+                      'mj. ${Format.novac(racun.iznos)}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppTema.tekstSivi,
+                      ),
+                    ),
                   const SizedBox(height: 6),
                   GestureDetector(
                     onTap: () => provider.promijeniStatusPlacanja(racun),

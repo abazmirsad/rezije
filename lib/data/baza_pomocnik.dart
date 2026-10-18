@@ -15,7 +15,7 @@ class BazaPomocnik {
   static final BazaPomocnik instanca = BazaPomocnik._();
 
   static const String _nazivBaze = 'rezije.db';
-  static const int _verzijaBaze = 1;
+  static const int _verzijaBaze = 2;
   static const String tabelaRacuni = 'racuni';
 
   Database? _baza;
@@ -34,10 +34,11 @@ class BazaPomocnik {
       puce,
       version: _verzijaBaze,
       onCreate: _kreirajTabele,
+      onUpgrade: _nadogradiBazu,
     );
   }
 
-  /// Kreira tabele pri prvom pokretanju aplikacije.
+  /// Kreira tabele pri prvom pokretanju aplikacije (verzija 2 shema).
   Future<void> _kreirajTabele(Database db, int verzija) async {
     await db.execute('''
       CREATE TABLE $tabelaRacuni (
@@ -48,9 +49,27 @@ class BazaPomocnik {
         datum_izdavanja INTEGER NOT NULL,
         datum_dospijeca INTEGER NOT NULL,
         placeno INTEGER NOT NULL DEFAULT 0,
-        biljeska TEXT
+        biljeska TEXT,
+        poziv_na_broj TEXT,
+        period_od INTEGER,
+        period_do INTEGER,
+        iznos_za_uplatu REAL
       )
     ''');
+  }
+
+  /// Nadogradnja baze za korisnike koji već imaju staru verziju.
+  ///
+  /// Prelazak s verzije 1 na 2: dodaju se nove kolone za PDF podatke
+  /// (poziv na broj, period usluge, iznos za uplatu). Postojeći računi
+  /// ostaju netaknuti - nove kolone dobiju NULL vrijednost.
+  Future<void> _nadogradiBazu(Database db, int staraVerzija, int novaVerzija) async {
+    if (staraVerzija < 2) {
+      await db.execute('ALTER TABLE $tabelaRacuni ADD COLUMN poziv_na_broj TEXT');
+      await db.execute('ALTER TABLE $tabelaRacuni ADD COLUMN period_od INTEGER');
+      await db.execute('ALTER TABLE $tabelaRacuni ADD COLUMN period_do INTEGER');
+      await db.execute('ALTER TABLE $tabelaRacuni ADD COLUMN iznos_za_uplatu REAL');
+    }
   }
 
   // ----- CRUD operacije -----

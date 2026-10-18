@@ -36,6 +36,12 @@ dependencies:
   # Moderni fontovi
   google_fonts: ^6.2.1
 
+  # Čitanje teksta iz PDF računa (open-source: PDFBox na Androidu, PDFKit na iOS)
+  read_pdf_text: ^0.3.1
+
+  # Izbor PDF fajla s uređaja
+  file_picker: ^8.1.2
+
   # Lokalne notifikacije (podsjetnici na dospijeće) - priprema za kasnije
   # flutter_local_notifications: ^17.1.2
 

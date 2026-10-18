@@ -10,10 +10,10 @@ class Racun {
   /// Kategorija troška (struja, voda, internet...).
   final Kategorija kategorija;
 
-  /// Naziv provajdera / firme (npr. "Elektroprivreda", "BH Telecom").
+  /// Naziv provajdera / firme (npr. "Telemach", "Elektroprivreda").
   final String provajder;
 
-  /// Iznos računa u KM (konvertibilna marka).
+  /// Mjesečni iznos računa u KM (vrijednost usluga za taj mjesec).
   final double iznos;
 
   /// Datum izdavanja računa.
@@ -28,6 +28,19 @@ class Racun {
   /// Opcionalna bilješka korisnika.
   final String biljeska;
 
+  /// Poziv na broj (referenca za plaćanje). Opcionalno.
+  final String pozivNaBroj;
+
+  /// Početak perioda pružanja usluge. Opcionalno.
+  final DateTime? periodOd;
+
+  /// Kraj perioda pružanja usluge. Opcionalno.
+  final DateTime? periodDo;
+
+  /// Trenutno stanje / ukupno za uplatu (uključuje dug ili pretplatu).
+  /// Ako je `null`, podrazumijeva se da je jednako mjesečnom [iznos].
+  final double? iznosZaUplatu;
+
   const Racun({
     this.id,
     required this.kategorija,
@@ -37,7 +50,19 @@ class Racun {
     required this.datumDospijeca,
     this.placeno = false,
     this.biljeska = '',
+    this.pozivNaBroj = '',
+    this.periodOd,
+    this.periodDo,
+    this.iznosZaUplatu,
   });
+
+  /// Stvarni iznos za uplatu: [iznosZaUplatu] ako postoji, inače mjesečni [iznos].
+  double get zaUplatu => iznosZaUplatu ?? iznos;
+
+  /// Da li se iznos za uplatu razlikuje od mjesečnog iznosa
+  /// (npr. zbog duga ili pretplate).
+  bool get imaRazlikuStanja =>
+      iznosZaUplatu != null && (iznosZaUplatu! - iznos).abs() > 0.001;
 
   /// Da li je rok plaćanja prošao, a račun još nije plaćen.
   bool get kasni {
@@ -65,6 +90,10 @@ class Racun {
   }
 
   /// Kopija računa s izmijenjenim poljima.
+  ///
+  /// Napomena: `periodOd`, `periodDo` i `iznosZaUplatu` se ne mogu
+  /// vratiti na `null` kroz copyWith (prosljeđivanje `null` zadržava
+  /// staru vrijednost) - to je u redu za naše potrebe.
   Racun copyWith({
     int? id,
     Kategorija? kategorija,
@@ -74,6 +103,10 @@ class Racun {
     DateTime? datumDospijeca,
     bool? placeno,
     String? biljeska,
+    String? pozivNaBroj,
+    DateTime? periodOd,
+    DateTime? periodDo,
+    double? iznosZaUplatu,
   }) {
     return Racun(
       id: id ?? this.id,
@@ -84,6 +117,10 @@ class Racun {
       datumDospijeca: datumDospijeca ?? this.datumDospijeca,
       placeno: placeno ?? this.placeno,
       biljeska: biljeska ?? this.biljeska,
+      pozivNaBroj: pozivNaBroj ?? this.pozivNaBroj,
+      periodOd: periodOd ?? this.periodOd,
+      periodDo: periodDo ?? this.periodDo,
+      iznosZaUplatu: iznosZaUplatu ?? this.iznosZaUplatu,
     );
   }
 
@@ -98,6 +135,10 @@ class Racun {
       'datum_dospijeca': datumDospijeca.millisecondsSinceEpoch,
       'placeno': placeno ? 1 : 0,
       'biljeska': biljeska,
+      'poziv_na_broj': pozivNaBroj,
+      'period_od': periodOd?.millisecondsSinceEpoch,
+      'period_do': periodDo?.millisecondsSinceEpoch,
+      'iznos_za_uplatu': iznosZaUplatu,
     };
   }
 
@@ -116,6 +157,16 @@ class Racun {
       ),
       placeno: (map['placeno'] as int) == 1,
       biljeska: (map['biljeska'] as String?) ?? '',
+      pozivNaBroj: (map['poziv_na_broj'] as String?) ?? '',
+      periodOd: map['period_od'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['period_od'] as int),
+      periodDo: map['period_do'] == null
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(map['period_do'] as int),
+      iznosZaUplatu: map['iznos_za_uplatu'] == null
+          ? null
+          : (map['iznos_za_uplatu'] as num).toDouble(),
     );
   }
 }
