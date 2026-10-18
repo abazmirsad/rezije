@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/kategorija.dart';
 import '../models/racun.dart';
 import '../providers/rezije_provider.dart';
 import '../tema/app_tema.dart';
