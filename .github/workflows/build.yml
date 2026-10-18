@@ -1,0 +1,58 @@
+name: Build Android APK
+
+# Kada se pokreće: na svaki push na main granu, i ručno iz GitHub-a.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    name: Napravi Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Preuzmi kod iz repozitorija
+      - name: Preuzmi kod
+        uses: actions/checkout@v4
+
+      # 2. Instaliraj Javu (potrebna za Android build)
+      - name: Postavi Javu
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 3. Instaliraj Flutter (stabilna verzija)
+      - name: Postavi Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: 'stable'
+          cache: true
+
+      # 4. Generiši platformske foldere (android/) ako ne postoje.
+      #    Ovo pravi potrebnu Android strukturu u oblaku, pa je
+      #    ne moramo držati u repozitoriju.
+      - name: Generiši Android projekat
+        run: flutter create --platforms=android --project-name rezije .
+
+      # 5. Preuzmi pakete (dependencies)
+      - name: Preuzmi pakete
+        run: flutter pub get
+
+      # 6. Provjeri kod (ne prekida build ako ima samo upozorenja)
+      - name: Analiziraj kod
+        run: flutter analyze || true
+
+      # 7. Napravi release APK
+      - name: Napravi APK
+        run: flutter build apk --release
+
+      # 8. Okači APK kao artefakt da ga možeš skinuti sa GitHub-a
+      - name: Okači APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rezije-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
