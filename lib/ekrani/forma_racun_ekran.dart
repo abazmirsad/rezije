@@ -1,12 +1,9 @@
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:read_pdf_text/read_pdf_text.dart';
 
 import '../models/kategorija.dart';
 import '../models/racun.dart';
-import '../pdf/telemach_parser.dart';
 import '../providers/rezije_provider.dart';
 import '../tema/app_tema.dart';
 import '../util/format.dart';
@@ -14,7 +11,8 @@ import '../util/format.dart';
 /// Forma za dodavanje novog ili uređivanje postojećeg računa.
 ///
 /// Ako je [postojeci] `null`, radi se o dodavanju novog računa.
-/// Podaci se mogu unijeti ručno ili uvesti iz PDF računa (Telemach).
+/// Podaci se unose ručno. (Automatsko čitanje iz Gmaila dolazi kao
+/// zasebna faza.)
 class FormaRacunEkran extends StatefulWidget {
   final Racun? postojeci;
 
@@ -38,8 +36,6 @@ class _FormaRacunEkranState extends State<FormaRacunEkran> {
   DateTime? _periodOd;
   DateTime? _periodDo;
   late bool _placeno;
-
-  bool _uvozUToku = false;
 
   bool get _uredjivanje => widget.postojeci != null;
 
@@ -95,84 +91,6 @@ class _FormaRacunEkranState extends State<FormaRacunEkran> {
         }
       });
     }
-  }
-
-  /// Otvara izbor PDF fajla, čita tekst i popunjava formu.
-  Future<void> _uveziPdf() async {
-    setState(() => _uvozUToku = true);
-    try {
-      final izbor = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['pdf'],
-        withData: false,
-      );
-
-      if (izbor == null || izbor.files.single.path == null) {
-        // Korisnik otkazao izbor.
-        return;
-      }
-
-      final putanja = izbor.files.single.path!;
-      final tekst = await ReadPdfText.getPDFtext(putanja);
-
-      if (!TelemachParser.prepoznaje(tekst)) {
-        _poruka(
-          'PDF nije prepoznat kao Telemach račun. '
-          'Podatke možete unijeti ručno.',
-          greska: true,
-        );
-        return;
-      }
-
-      final rezultat = TelemachParser.parsiraj(tekst);
-      if (!rezultat.uspjeh || rezultat.racun == null) {
-        _poruka(
-          rezultat.upozorenja.isNotEmpty
-              ? rezultat.upozorenja.first
-              : 'Nije moguće pročitati podatke iz PDF-a.',
-          greska: true,
-        );
-        return;
-      }
-
-      _popuniIzRacuna(rezultat.racun!);
-
-      final poruka = rezultat.upozorenja.isEmpty
-          ? 'Račun uspješno učitan iz PDF-a. Provjerite podatke prije spremanja.'
-          : 'Račun učitan uz napomene: ${rezultat.upozorenja.join(" ")}';
-      _poruka(poruka);
-    } catch (e) {
-      _poruka('Greška pri čitanju PDF-a: $e', greska: true);
-    } finally {
-      if (mounted) setState(() => _uvozUToku = false);
-    }
-  }
-
-  /// Popunjava polja forme iz parsiranog računa.
-  void _popuniIzRacuna(Racun r) {
-    setState(() {
-      _kategorija = r.kategorija;
-      _provajderKontroler.text = r.provajder;
-      _iznosKontroler.text = r.iznos.toStringAsFixed(2);
-      _zaUplatuKontroler.text =
-          r.iznosZaUplatu != null ? r.iznosZaUplatu!.toStringAsFixed(2) : '';
-      _pozivKontroler.text = r.pozivNaBroj;
-      _datumIzdavanja = r.datumIzdavanja;
-      _datumDospijeca = r.datumDospijeca;
-      _periodOd = r.periodOd;
-      _periodDo = r.periodDo;
-    });
-  }
-
-  void _poruka(String tekst, {bool greska = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(tekst),
-        backgroundColor: greska ? AppTema.greska : AppTema.uspjeh,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   Future<void> _sacuvaj() async {
@@ -234,20 +152,6 @@ class _FormaRacunEkranState extends State<FormaRacunEkran> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
           children: [
-            // Uvoz iz PDF-a (samo kod novog računa)
-            if (!_uredjivanje) ...[
-              _UvozDugme(
-                uToku: _uvozUToku,
-                naDodir: _uvozUToku ? null : _uveziPdf,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Učitaj Telemach PDF račun pa provjeri podatke.',
-                style: TextStyle(fontSize: 12, color: AppTema.tekstSivi),
-              ),
-              const SizedBox(height: 20),
-            ],
-
             const _Oznaka('Kategorija'),
             const SizedBox(height: 8),
             _IzborKategorije(
@@ -437,40 +341,6 @@ class _FormaRacunEkranState extends State<FormaRacunEkran> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Dugme za uvoz PDF-a (prikazuje spinner dok traje čitanje).
-class _UvozDugme extends StatelessWidget {
-  final bool uToku;
-  final VoidCallback? naDodir;
-
-  const _UvozDugme({required this.uToku, required this.naDodir});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: naDodir,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppTema.primarna,
-          side: const BorderSide(color: AppTema.primarna, width: 1.5),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        icon: uToku
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : const Icon(Icons.picture_as_pdf_rounded),
-        label: Text(uToku ? 'Čitam PDF...' : 'Uvezi iz PDF-a'),
       ),
     );
   }
