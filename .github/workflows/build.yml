@@ -52,24 +52,33 @@ jobs:
           # Override za sve podprojekte (plugine) - pišemo Kotlin DSL
           # direktno u root build.gradle.kts preko refleksije (bez AGP
           # tipova u classpath-u). Ovo hvata file_picker, sqflite itd.
+          # Override za sve podprojekte (plugine): kad se primijeni
+          # Android plugin, postavi compileSdk 36 preko refleksije.
+          # Koristimo plugins.withId (umjesto afterEvaluate) da izbjegnemo
+          # "project is already evaluated" grešku.
           ROOT=android/build.gradle.kts
           {
             echo ''
             echo 'subprojects {'
-            echo '    afterEvaluate {'
+            echo '    plugins.withId("com.android.library") {'
             echo '        val androidExt = extensions.findByName("android")'
-            echo '        if (androidExt != null) {'
-            echo '            val m = androidExt.javaClass.methods.firstOrNull {'
-            echo '                it.name == "compileSdkVersion" && it.parameterTypes.size == 1 && it.parameterTypes[0] == Integer.TYPE'
-            echo '            }'
-            echo '            m?.invoke(androidExt, 36)'
+            echo '        val m = androidExt?.javaClass?.methods?.firstOrNull {'
+            echo '            it.name == "compileSdkVersion" && it.parameterTypes.size == 1 && it.parameterTypes[0] == Integer.TYPE'
             echo '        }'
+            echo '        m?.invoke(androidExt, 36)'
+            echo '    }'
+            echo '    plugins.withId("com.android.application") {'
+            echo '        val androidExt = extensions.findByName("android")'
+            echo '        val m = androidExt?.javaClass?.methods?.firstOrNull {'
+            echo '            it.name == "compileSdkVersion" && it.parameterTypes.size == 1 && it.parameterTypes[0] == Integer.TYPE'
+            echo '        }'
+            echo '        m?.invoke(androidExt, 36)'
             echo '    }'
             echo '}'
           } >> "$ROOT"
 
           echo "----- kraj root build.gradle.kts -----"
-          tail -n 16 "$ROOT"
+          tail -n 22 "$ROOT"
 
       # 5. Preuzmi pakete (dependencies)
       - name: Preuzmi pakete
