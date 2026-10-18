@@ -49,31 +49,27 @@ jobs:
           sed -i 's/compileSdk = flutter.compileSdkVersion/compileSdk = 36/' "$APP"
           sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' "$APP"
 
-          # Groovy skripta za override svih podprojekata (plugina).
-          # Pišemo je redom (bez heredoc-a) da izbjegnemo probleme s
-          # indentacijom YAML bloka.
-          SO=android/sdk_override.gradle
-          : > "$SO"
-          echo 'subprojects {'                                      >> "$SO"
-          echo '    afterEvaluate { proj ->'                        >> "$SO"
-          echo "        if (proj.hasProperty('android')) {"         >> "$SO"
-          echo '            proj.android {'                         >> "$SO"
-          echo '                compileSdkVersion 36'               >> "$SO"
-          echo '                if (defaultConfig.minSdkVersion == null || defaultConfig.minSdkVersion.apiLevel < 23) {' >> "$SO"
-          echo '                    defaultConfig.minSdkVersion 23'  >> "$SO"
-          echo '                }'                                  >> "$SO"
-          echo '            }'                                      >> "$SO"
-          echo '        }'                                          >> "$SO"
-          echo '    }'                                              >> "$SO"
-          echo '}'                                                  >> "$SO"
+          # Override za sve podprojekte (plugine) - pišemo Kotlin DSL
+          # direktno u root build.gradle.kts preko refleksije (bez AGP
+          # tipova u classpath-u). Ovo hvata file_picker, sqflite itd.
+          ROOT=android/build.gradle.kts
+          {
+            echo ''
+            echo 'subprojects {'
+            echo '    afterEvaluate {'
+            echo '        val androidExt = extensions.findByName("android")'
+            echo '        if (androidExt != null) {'
+            echo '            val m = androidExt.javaClass.methods.firstOrNull {'
+            echo '                it.name == "compileSdkVersion" && it.parameterTypes.size == 1 && it.parameterTypes[0] == Integer.TYPE'
+            echo '            }'
+            echo '            m?.invoke(androidExt, 36)'
+            echo '        }'
+            echo '    }'
+            echo '}'
+          } >> "$ROOT"
 
-          # Poveži skriptu iz root build.gradle.kts.
-          printf '\napply(from = "sdk_override.gradle")\n' >> android/build.gradle.kts
-
-          echo "----- sdk_override.gradle -----"
-          cat "$SO"
           echo "----- kraj root build.gradle.kts -----"
-          tail -n 5 android/build.gradle.kts
+          tail -n 16 "$ROOT"
 
       # 5. Preuzmi pakete (dependencies)
       - name: Preuzmi pakete
