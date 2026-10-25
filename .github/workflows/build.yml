@@ -37,7 +37,7 @@ jobs:
       #    Ovo pravi potrebnu Android strukturu u oblaku, pa je
       #    ne moramo držati u repozitoriju.
       - name: Generiši Android projekat
-        run: flutter create --platforms=android --project-name rezije .
+        run: flutter create --platforms=android --org com.rezije --project-name app .
 
       # 4b. Postavi compileSdk/targetSdk 36 (sqflite zahtijeva 36).
       - name: Podesi Android SDK verzije
