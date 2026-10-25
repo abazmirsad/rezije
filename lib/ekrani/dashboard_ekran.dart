@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/kategorija.dart';
@@ -100,8 +101,19 @@ class _TestPdfDugmeState extends State<_TestPdfDugme> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Test čitanja PDF-a'),
-        content: SingleChildScrollView(child: Text(izvjestaj)),
+        content: SingleChildScrollView(child: SelectableText(izvjestaj)),
         actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: izvjestaj));
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('Tekst kopiran.')),
+                );
+              }
+            },
+            child: const Text('Kopiraj'),
+          ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('U redu'),

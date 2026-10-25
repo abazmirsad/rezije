@@ -5,7 +5,6 @@ import '../data/baza_pomocnik.dart';
 import '../models/kategorija.dart';
 import '../models/racun.dart';
 import '../pdf/pdf_servis.dart';
-import '../pdf/rezultat_parsiranja.dart';
 
 /// Centralno mjesto za upravljanje stanjem aplikacije.
 ///
@@ -57,45 +56,25 @@ class RezijeProvider extends ChangeNotifier {
     ];
 
     final izvjestaj = StringBuffer();
-    int dodato = 0;
 
     for (final putanja in uzorci) {
+      final ime = putanja.split('/').last;
       try {
         final podaci = await rootBundle.load(putanja);
         final bajtovi = podaci.buffer.asUint8List();
-        final RezultatParsiranja rez = PdfServis.parsirajRacun(bajtovi);
 
-        if (rez.uspjeh && rez.racuni.isNotEmpty) {
-          // Jedan PDF može imati više računa (OKI: 3 mjeseca).
-          for (final r in rez.racuni) {
-            await dodajRacun(r);
-            dodato++;
-            izvjestaj.writeln(
-              '✓ ${r.provajder}: ${r.iznos.toStringAsFixed(2)} KM, '
-              'poziv ${r.pozivNaBroj}',
-            );
-          }
-        } else {
-          // DIJAGNOSTIKA: prikaži sirovi tekst koji syncfusion izvuče,
-          // da vidimo zašto parser ne prepoznaje račun.
-          final siroviTekst = PdfServis.izvuciTekst(bajtovi);
-          final isjecak = siroviTekst.length > 400
-              ? siroviTekst.substring(0, 400)
-              : siroviTekst;
-          izvjestaj.writeln(
-            '✗ ${putanja.split("/").last} '
-            '(izvučeno ${siroviTekst.length} znakova):',
-          );
-          izvjestaj.writeln('--- TEKST ---');
-          izvjestaj.writeln(isjecak.isEmpty ? '(PRAZNO)' : isjecak);
-          izvjestaj.writeln('--- kraj ---');
-        }
+        // Uvijek ispiši SIROVI tekst (za dijagnostiku formata syncfusiona).
+        final siroviTekst = PdfServis.izvuciTekst(bajtovi);
+        izvjestaj.writeln('===== $ime (${siroviTekst.length} znakova) =====');
+        izvjestaj.writeln(siroviTekst.isEmpty ? '(PRAZNO)' : siroviTekst);
+        izvjestaj.writeln('===== kraj $ime =====');
+        izvjestaj.writeln('');
       } catch (e) {
-        izvjestaj.writeln('✗ ${putanja.split("/").last}: greška ($e)');
+        izvjestaj.writeln('✗ $ime: greška ($e)');
       }
     }
 
-    return 'Dodato $dodato računa (iz ${uzorci.length} PDF-a).\n\n$izvjestaj';
+    return 'DIJAGNOSTIKA - sirovi tekst iz PDF-ova:\n\n$izvjestaj';
   }
 
   /// Ubacuje demo račune za zadnja tri mjeseca.
