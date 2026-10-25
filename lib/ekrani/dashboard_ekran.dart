@@ -34,7 +34,11 @@ class DashboardEkran extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
           children: [
             _Zaglavlje(mjesec: Format.mjesecGodina(sada.year, sada.month)),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+
+            // TEST dugme za čitanje PDF uzoraka (privremeno).
+            _TestPdfDugme(),
+            const SizedBox(height: 16),
 
             // Kartice sažetka
             _KarticeSazetka(
@@ -66,6 +70,69 @@ class DashboardEkran extends StatelessWidget {
               _NadolazecaPlacanja(racuni: nadolazeci),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Privremeno dugme: učita ugrađene PDF uzorke i parsira ih, da se
+/// na telefonu provjeri da čitanje PDF-a radi. Uklanja se kad Gmail proradi.
+class _TestPdfDugme extends StatefulWidget {
+  @override
+  State<_TestPdfDugme> createState() => _TestPdfDugmeState();
+}
+
+class _TestPdfDugmeState extends State<_TestPdfDugme> {
+  bool _uToku = false;
+
+  Future<void> _pokreni() async {
+    setState(() => _uToku = true);
+    final provider = context.read<RezijeProvider>();
+    String izvjestaj;
+    try {
+      izvjestaj = await provider.testirajPdfUzorke();
+    } catch (e) {
+      izvjestaj = 'Greška: $e';
+    }
+    if (!mounted) return;
+    setState(() => _uToku = false);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Test čitanja PDF-a'),
+        content: SingleChildScrollView(child: Text(izvjestaj)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('U redu'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: _uToku ? null : _pokreni,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AppTema.primarna,
+          side: const BorderSide(color: AppTema.primarna, width: 1.5),
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        icon: _uToku
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.science_rounded),
+        label: Text(_uToku ? 'Čitam PDF uzorke...' : 'Testiraj čitanje PDF-a'),
       ),
     );
   }

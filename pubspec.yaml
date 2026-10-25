@@ -36,6 +36,10 @@ dependencies:
   # Moderni fontovi
   google_fonts: ^6.2.1
 
+  # Čitanje teksta iz PDF računa (ČISTI DART - ne ruši Android build).
+  # Besplatno uz Syncfusion Community licencu (lična/mala upotreba).
+  syncfusion_flutter_pdf: ^30.1.42
+
   # Lokalne notifikacije (podsjetnici na dospijeće) - priprema za kasnije
   # flutter_local_notifications: ^17.1.2
 
@@ -46,3 +50,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Ugrađeni PDF uzorci - privremeno, za testiranje čitanja na telefonu.
+  # Uklanja se kad Gmail integracija proradi.
+  assets:
+    - assets/uzorci/

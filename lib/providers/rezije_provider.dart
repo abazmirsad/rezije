@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show rootBundle;
 
 import '../data/baza_pomocnik.dart';
 import '../models/kategorija.dart';
 import '../models/racun.dart';
+import '../pdf/pdf_servis.dart';
+import '../pdf/rezultat_parsiranja.dart';
 
 /// Centralno mjesto za upravljanje stanjem aplikacije.
 ///
@@ -38,6 +41,49 @@ class RezijeProvider extends ChangeNotifier {
 
     _ucitavanje = false;
     notifyListeners();
+  }
+
+  /// TEST: učita ugrađene PDF uzorke iz assets, parsira ih i doda račune.
+  ///
+  /// Služi da se na telefonu provjeri da čitanje PDF-a radi, prije nego
+  /// Gmail integracija proradi. Vraća tekstualni izvještaj o rezultatu.
+  Future<String> testirajPdfUzorke() async {
+    const uzorci = [
+      'assets/uzorci/telemach_09.pdf',
+      'assets/uzorci/telemach_07.pdf',
+      'assets/uzorci/gas_508055.pdf',
+      'assets/uzorci/gas_656644.pdf',
+    ];
+
+    final izvjestaj = StringBuffer();
+    int dodato = 0;
+
+    for (final putanja in uzorci) {
+      try {
+        final podaci = await rootBundle.load(putanja);
+        final bajtovi = podaci.buffer.asUint8List();
+        final RezultatParsiranja rez = PdfServis.parsirajRacun(bajtovi);
+
+        if (rez.uspjeh && rez.racun != null) {
+          await dodajRacun(rez.racun!);
+          dodato++;
+          final r = rez.racun!;
+          izvjestaj.writeln(
+            '✓ ${r.provajder}: ${r.iznos.toStringAsFixed(2)} KM, '
+            'poziv ${r.pozivNaBroj}',
+          );
+        } else {
+          izvjestaj.writeln(
+            '✗ ${putanja.split("/").last}: '
+            '${rez.upozorenja.isNotEmpty ? rez.upozorenja.first : "nije parsirano"}',
+          );
+        }
+      } catch (e) {
+        izvjestaj.writeln('✗ ${putanja.split("/").last}: greška ($e)');
+      }
+    }
+
+    return 'Dodato $dodato od ${uzorci.length} računa.\n\n$izvjestaj';
   }
 
   /// Ubacuje demo račune za zadnja tri mjeseca.
