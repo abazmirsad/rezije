@@ -133,11 +133,7 @@ class SarajevogasParser {
       biljeska: 'Uvezeno iz PDF-a (Sarajevogas)',
     );
 
-    return RezultatParsiranja(
-      racun: racun,
-      upozorenja: upozorenja,
-      uspjeh: true,
-    );
+    return RezultatParsiranja.jedan(racun, upozorenja: upozorenja);
   }
 
   // ----- Pomoćne funkcije -----

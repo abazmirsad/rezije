@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 
+import 'oki_parser.dart';
 import 'rezultat_parsiranja.dart';
 import 'sarajevogas_parser.dart';
 import 'telemach_parser.dart';
@@ -47,9 +48,13 @@ class PdfServis {
     if (SarajevogasParser.prepoznaje(tekst)) {
       return SarajevogasParser.parsiraj(tekst);
     }
+    if (OkiParser.prepoznaje(tekst)) {
+      return OkiParser.parsiraj(tekst);
+    }
 
     return RezultatParsiranja.neuspjeh(
-      'Provajder nije prepoznat. Trenutno su podržani Telemach i Sarajevogas.',
+      'Provajder nije prepoznat. Trenutno su podržani '
+      'Telemach, Sarajevogas i OKI (održavanje).',
     );
   }
 }

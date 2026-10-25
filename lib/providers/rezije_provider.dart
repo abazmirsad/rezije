@@ -53,6 +53,7 @@ class RezijeProvider extends ChangeNotifier {
       'assets/uzorci/telemach_07.pdf',
       'assets/uzorci/gas_508055.pdf',
       'assets/uzorci/gas_656644.pdf',
+      'assets/uzorci/oki_10_12.pdf', // 1 PDF = 3 računa
     ];
 
     final izvjestaj = StringBuffer();
@@ -64,14 +65,16 @@ class RezijeProvider extends ChangeNotifier {
         final bajtovi = podaci.buffer.asUint8List();
         final RezultatParsiranja rez = PdfServis.parsirajRacun(bajtovi);
 
-        if (rez.uspjeh && rez.racun != null) {
-          await dodajRacun(rez.racun!);
-          dodato++;
-          final r = rez.racun!;
-          izvjestaj.writeln(
-            '✓ ${r.provajder}: ${r.iznos.toStringAsFixed(2)} KM, '
-            'poziv ${r.pozivNaBroj}',
-          );
+        if (rez.uspjeh && rez.racuni.isNotEmpty) {
+          // Jedan PDF može imati više računa (OKI: 3 mjeseca).
+          for (final r in rez.racuni) {
+            await dodajRacun(r);
+            dodato++;
+            izvjestaj.writeln(
+              '✓ ${r.provajder}: ${r.iznos.toStringAsFixed(2)} KM, '
+              'poziv ${r.pozivNaBroj}',
+            );
+          }
         } else {
           izvjestaj.writeln(
             '✗ ${putanja.split("/").last}: '
@@ -83,7 +86,7 @@ class RezijeProvider extends ChangeNotifier {
       }
     }
 
-    return 'Dodato $dodato od ${uzorci.length} računa.\n\n$izvjestaj';
+    return 'Dodato $dodato računa (iz ${uzorci.length} PDF-a).\n\n$izvjestaj';
   }
 
   /// Ubacuje demo račune za zadnja tri mjeseca.

@@ -143,11 +143,7 @@ class TelemachParser {
       biljeska: 'Uvezeno iz PDF-a (Telemach)',
     );
 
-    return RezultatParsiranja(
-      racun: racun,
-      upozorenja: upozorenja,
-      uspjeh: true,
-    );
+    return RezultatParsiranja.jedan(racun, upozorenja: upozorenja);
   }
 
   // ----- Pomoćne funkcije -----
