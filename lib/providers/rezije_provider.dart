@@ -56,25 +56,37 @@ class RezijeProvider extends ChangeNotifier {
     ];
 
     final izvjestaj = StringBuffer();
+    int dodato = 0;
 
     for (final putanja in uzorci) {
       final ime = putanja.split('/').last;
       try {
         final podaci = await rootBundle.load(putanja);
         final bajtovi = podaci.buffer.asUint8List();
+        final rez = PdfServis.parsirajRacun(bajtovi);
 
-        // Uvijek ispiši SIROVI tekst (za dijagnostiku formata syncfusiona).
-        final siroviTekst = PdfServis.izvuciTekst(bajtovi);
-        izvjestaj.writeln('===== $ime (${siroviTekst.length} znakova) =====');
-        izvjestaj.writeln(siroviTekst.isEmpty ? '(PRAZNO)' : siroviTekst);
-        izvjestaj.writeln('===== kraj $ime =====');
-        izvjestaj.writeln('');
+        if (rez.uspjeh && rez.racuni.isNotEmpty) {
+          for (final r in rez.racuni) {
+            await dodajRacun(r);
+            dodato++;
+            izvjestaj.writeln(
+              '✓ ${r.provajder}: ${r.iznos.toStringAsFixed(2)} KM'
+              '${r.imaRazlikuStanja ? " (za uplatu ${r.zaUplatu.toStringAsFixed(2)})" : ""}, '
+              'poziv ${r.pozivNaBroj}',
+            );
+          }
+        } else {
+          izvjestaj.writeln(
+            '✗ $ime: '
+            '${rez.upozorenja.isNotEmpty ? rez.upozorenja.first : "nije prepoznat"}',
+          );
+        }
       } catch (e) {
         izvjestaj.writeln('✗ $ime: greška ($e)');
       }
     }
 
-    return 'DIJAGNOSTIKA - sirovi tekst iz PDF-ova:\n\n$izvjestaj';
+    return 'Dodato $dodato računa (iz ${uzorci.length} PDF-a).\n\n$izvjestaj';
   }
 
   /// Ubacuje demo račune za zadnja tri mjeseca.

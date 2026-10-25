@@ -4,23 +4,15 @@ import 'rezultat_parsiranja.dart';
 
 /// Parser za Sarajevogas račune (prirodni gas / grijanje).
 ///
-/// Radi nad tekstom izvučenim iz PDF-a. Prepoznatljive oznake:
-/// "RAČUN ZA PRIRODNI GAS", "Obračunski period", red
-/// "Ukupan iznos računa (8 + 9+ 10) <iznos>", i saldo red
-/// "Novi saldo Ukupna preplata/dugovanje <iznos>".
-///
-/// Napomena: Sarajevogas koristi TAČKU kao decimalni separator (18.55),
-/// za razliku od Telemacha koji koristi zarez (80,45).
+/// Prilagođen syncfusion formatu: labela i vrijednost su u odvojenim
+/// redovima. Decimalni separator je TAČKA (18.55).
 class SarajevogasParser {
   /// Da li tekst izgleda kao Sarajevogas račun.
   static bool prepoznaje(String tekst) {
     final t = tekst.toLowerCase();
-    return t.contains('sarajevogas') ||
-        t.contains('prirodni gas') ||
-        t.contains('sarajevogas.ba');
+    return t.contains('sarajevogas') || t.contains('prirodni gas');
   }
 
-  /// Parsira tekst Sarajevogas računa u [Racun].
   static RezultatParsiranja parsiraj(String tekst) {
     if (tekst.trim().isEmpty) {
       return RezultatParsiranja.neuspjeh('PDF ne sadrži čitljiv tekst.');
@@ -32,96 +24,103 @@ class SarajevogasParser {
         .map((l) => l.trim())
         .where((l) => l.isNotEmpty)
         .toList();
-    final spojeno = linije.join('\n');
 
-    // --- Referenca / poziv na broj: "Račun broj: 03-508055/26" ---
-    String pozivNaBroj = '';
-    final mRef = RegExp(
-      r'ra[cč]un\s*broj\s*:?\s*([0-9]{2}-[0-9]{4,}/[0-9]{2})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mRef != null) {
-      pozivNaBroj = mRef.group(1)!.trim();
-    } else {
-      // Rezervno: red "REFERENCA" blizu broja oblika 03-xxxxxx/26.
-      final mAlt = RegExp(r'([0-9]{2}-[0-9]{4,}/[0-9]{2})').firstMatch(spojeno);
-      if (mAlt != null) pozivNaBroj = mAlt.group(1)!.trim();
+    /// Vrijednost u redu poslije labele (ili na istom redu poslije ":").
+    String? vrijednostPoslije(String labelaRegex) {
+      final re = RegExp(labelaRegex, caseSensitive: false);
+      for (int i = 0; i < linije.length; i++) {
+        if (re.hasMatch(linije[i])) {
+          final idx = linije[i].indexOf(':');
+          if (idx >= 0 && idx < linije[i].length - 1) {
+            final naIstom = linije[i].substring(idx + 1).trim();
+            if (naIstom.isNotEmpty) return naIstom;
+          }
+          if (i + 1 < linije.length) return linije[i + 1].trim();
+        }
+      }
+      return null;
     }
+
+    // --- Referenca / poziv na broj: "03-508055/26" ---
+    String pozivNaBroj = '';
+    final mRef = RegExp(r'\b(\d{2}-\d{4,}/\d{2})\b').firstMatch(tekst);
+    if (mRef != null) pozivNaBroj = mRef.group(1)!;
 
     // --- Obračunski period: 30.06.2026 - 31.07.2026 ---
     DateTime? periodOd;
     DateTime? periodDo;
-    final mPeriod = RegExp(
-      r'obra[cč]unski\s*period\s*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})\.?\s*[-–]\s*(\d{1,2}\.\d{1,2}\.\d{4})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mPeriod != null) {
-      periodOd = _datum(mPeriod.group(1)!);
-      periodDo = _datum(mPeriod.group(2)!);
-    } else {
-      upozorenja.add('Nije pronađen obračunski period.');
+    final per = vrijednostPoslije(r'obra[cč]unski\s*period');
+    if (per != null) {
+      final m = RegExp(
+        r'(\d{1,2}\.\d{1,2}\.\d{4})\s*[-–]\s*(\d{1,2}\.\d{1,2}\.\d{4})',
+      ).firstMatch(per);
+      if (m != null) {
+        periodOd = _datum(m.group(1)!);
+        periodDo = _datum(m.group(2)!);
+      }
     }
+    if (periodOd == null) upozorenja.add('Nije pronađen obračunski period.');
 
     // --- Datum izdavanja računa: 31.07.2026 ---
     DateTime? datumIzdavanja;
-    final mIzd = RegExp(
-      r'datum\s*izdavanja[^\n]*?(\d{1,2}\.\d{1,2}\.\d{4})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mIzd != null) {
-      datumIzdavanja = _datum(mIzd.group(1)!);
-    }
+    final izd = vrijednostPoslije(r'datum\s*izdavanja');
+    if (izd != null) datumIzdavanja = _datum(izd);
 
-    // --- Mjesečni iznos: red "Ukupan iznos računa (8 + 9+ 10) 18.55" ---
+    // --- Mjesečni iznos: red "Ukupan iznos računa (8 + 9+ 10)" pa iznos ---
     double? mjesecniIznos;
-    for (final l in linije) {
+    for (int i = 0; i < linije.length; i++) {
       if (RegExp(r'ukupan\s*iznos\s*ra[cč]una', caseSensitive: false)
-          .hasMatch(l)) {
-        final brojevi = _sviBrojevi(l);
-        if (brojevi.isNotEmpty) {
-          mjesecniIznos = brojevi.last; // zadnji broj u redu = ukupan iznos
-          break;
+          .hasMatch(linije[i])) {
+        // Iznos je na istom redu ili u sljedećem.
+        mjesecniIznos = _brojUTacki(linije[i]);
+        if (mjesecniIznos == null && i + 1 < linije.length) {
+          mjesecniIznos = _brojUTacki(linije[i + 1]);
         }
+        if (mjesecniIznos != null) break;
       }
     }
     if (mjesecniIznos == null) {
       upozorenja.add('Nije pronađen mjesečni iznos - unesite ručno.');
     }
 
-    // --- Saldo (preplata ili dugovanje): "Novi saldo Ukupna preplata 54.96" ---
-    // iznosZaUplatu računamo tako da:
-    //   - preplata >= mjesečni  -> za uplatu 0 (pokriveno pretplatom)
-    //   - inače za uplatu = mjesečni - preplata (ili + dugovanje)
+    // --- Saldo: "Novi saldo" -> "Ukupna preplata/dugovanje" -> iznos ---
     double? iznosZaUplatu;
-    final mSaldo = RegExp(
-      r'novi\s*saldo[^\n]*?(preplata|dugovanje)[^\n]*?(\d+[.,]\d{2})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mSaldo != null && mjesecniIznos != null) {
-      final vrsta = mSaldo.group(1)!.toLowerCase();
-      final saldo = _broj(mSaldo.group(2)!) ?? 0;
-      if (vrsta.contains('preplata')) {
-        // Novi saldo je preplata NAKON ovog računa -> za uplatu 0.
-        iznosZaUplatu = 0.0;
-      } else {
-        // Dugovanje -> za uplatu = mjesečni + dug.
-        iznosZaUplatu = mjesecniIznos + saldo;
+    for (int i = 0; i < linije.length; i++) {
+      if (RegExp(r'novi\s*saldo', caseSensitive: false)
+          .hasMatch(linije[i])) {
+        // Potraži "preplata"/"dugovanje" i iznos u narednih par redova.
+        bool preplata = false;
+        bool dugovanje = false;
+        double? saldo;
+        for (int j = i; j < linije.length && j <= i + 4; j++) {
+          final lj = linije[j].toLowerCase();
+          if (lj.contains('preplata')) preplata = true;
+          if (lj.contains('dugovanje')) dugovanje = true;
+          final b = _brojUTacki(linije[j]);
+          if (b != null && saldo == null && j > i) saldo = b;
+        }
+        if (mjesecniIznos != null) {
+          if (preplata) {
+            iznosZaUplatu = 0.0; // pokriveno pretplatom
+          } else if (dugovanje && saldo != null) {
+            iznosZaUplatu = mjesecniIznos + saldo;
+          }
+        }
+        break;
       }
     }
 
     if (mjesecniIznos == null && datumIzdavanja == null) {
       return RezultatParsiranja.neuspjeh(
-        'Ovo ne izgleda kao prepoznatljiv Sarajevogas račun. '
-        'Provjerite PDF ili unesite podatke ručno.',
+        'Ovo ne izgleda kao prepoznatljiv Sarajevogas račun.',
       );
     }
 
     datumIzdavanja ??= periodDo ?? DateTime.now();
-    // Rok plaćanja: 15 dana od datuma izdavanja.
     final datumDospijeca = datumIzdavanja.add(const Duration(days: 15));
 
     final racun = Racun(
-      kategorija: Kategorija.grijanje, // prirodni gas = grijanje
+      kategorija: Kategorija.grijanje,
       provajder: 'Sarajevogas',
       iznos: mjesecniIznos ?? 0,
       datumIzdavanja: datumIzdavanja,
@@ -148,26 +147,11 @@ class SarajevogasParser {
     );
   }
 
-  /// Pretvara string u double. Sarajevogas koristi tačku (18.55),
-  /// ali tolerišemo i zarez za svaki slučaj.
-  static double? _broj(String s) {
-    var o = s.trim();
-    // Ako ima i tačku i zarez, zarez je hiljade -> ukloni ga.
-    if (o.contains('.') && o.contains(',')) {
-      o = o.replaceAll(',', '');
-    } else {
-      o = o.replaceAll(',', '.');
-    }
-    return double.tryParse(o);
-  }
-
-  /// Nalazi sve brojeve s 2 decimale (npr. "18.55", "3.40").
-  static List<double> _sviBrojevi(String s) {
-    final rezultat = <double>[];
-    for (final m in RegExp(r'\d+[.,]\d{2}').allMatches(s)) {
-      final b = _broj(m.group(0)!);
-      if (b != null) rezultat.add(b);
-    }
-    return rezultat;
+  /// Vraća broj SAMO ako je cijeli red čist iznos s tačkom (npr. "18.55").
+  static double? _brojUTacki(String red) {
+    final t = red.trim();
+    final m = RegExp(r'^(\d+\.\d{2})$').firstMatch(t);
+    if (m != null) return double.tryParse(m.group(1)!);
+    return null;
   }
 }

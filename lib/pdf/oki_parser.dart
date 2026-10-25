@@ -4,38 +4,29 @@ import 'rezultat_parsiranja.dart';
 
 /// Parser za OKI Upravitelj račune (održavanje zgrade / etažni vlasnik).
 ///
-/// Specifičnost: JEDAN PDF sadrži VIŠE mjesečnih uplatnica (npr. 3
-/// mjeseca odjednom). Svaka uplatnica ima:
-///   - oznaku mjeseca/godine "MM/YY" (npr. "10/26")
-///   - poziv na broj oblika "XXXXXXXX-MMYY-NNNNNN" (npr. 12125324-1026-217862)
-///   - iznos "15,00" (Naknada + Porez + Održavanje)
-///
-/// Parser vraća po jedan [Racun] za svaki mjesec.
+/// JEDAN PDF sadrži VIŠE mjesečnih uplatnica (npr. 3 mjeseca).
+/// Svaka uplatnica ima:
+///   - poziv na broj oblika "XXXXXXXX-MMYY-NNNNNN" (12125324-1026-217862)
+///   - ukupan iznos "15,00" (format s TAČNO 2 decimale)
+/// Stavke "Naknada 1,8000", "Porez 0,3060", "Održavanje 12,8940" imaju
+/// 4 decimale i NE smiju se uzeti kao iznos.
 class OkiParser {
-  /// Da li tekst izgleda kao OKI uplatnica.
-  ///
-  /// U PDF-u nema riječi "OKI", pa prepoznajemo po kombinaciji
-  /// "Održavanje" + "Naknada" + poziv na broj oblika 8cifara-4cifre-6cifara.
   static bool prepoznaje(String tekst) {
     final t = tekst.toLowerCase();
     final imaPoziv = RegExp(r'\d{8}-\d{4}-\d{6}').hasMatch(tekst);
-    return imaPoziv &&
-        t.contains('odr') && // "Održavanje" (tolerantno na dekodiranje slova)
-        t.contains('naknada');
+    return imaPoziv && (t.contains('odr') && t.contains('naknada'));
   }
 
-  /// Parsira sve mjesečne uplatnice iz OKI PDF-a.
   static RezultatParsiranja parsiraj(String tekst) {
     if (tekst.trim().isEmpty) {
       return RezultatParsiranja.neuspjeh('PDF ne sadrži čitljiv tekst.');
     }
 
-    // Svaki blok je obilježen jedinstvenim pozivom na broj
-    // oblika XXXXXXXX-MMYY-NNNNNN. Iz njega izvlačimo mjesec i godinu.
+    // Jedinstveni pozivi na broj (svaki se ponavlja, uzimamo jednom).
     final pozivi = RegExp(r'(\d{8})-(\d{2})(\d{2})-(\d{6})').allMatches(tekst);
 
     final racuni = <Racun>[];
-    final vidjeni = <String>{}; // da izbjegnemo duplikate (poziv se ponavlja)
+    final vidjeni = <String>{};
 
     for (final m in pozivi) {
       final pozivNaBroj = m.group(0)!;
@@ -43,25 +34,17 @@ class OkiParser {
       vidjeni.add(pozivNaBroj);
 
       final mjesec = int.parse(m.group(2)!);
-      final godina2 = int.parse(m.group(3)!);
-      final godina = 2000 + godina2;
+      final godina = 2000 + int.parse(m.group(3)!);
 
-      // Iznos: tražimo "15,00" u blizini ovog poziva. Pošto su svi iznosi
-      // jednaki i stoje uz blok, uzimamo prvi novčani iznos poslije poziva.
-      final iznos = _iznosUzBlok(tekst, m.end);
-
-      // Datumi: period je cijeli taj mjesec; rok = kraj mjeseca.
       final periodOd = DateTime(godina, mjesec, 1);
       final periodDo = DateTime(godina, mjesec + 1, 0); // zadnji dan mjeseca
-      final datumIzdavanja = periodOd;
-      final datumDospijeca = periodDo;
 
       racuni.add(Racun(
-        kategorija: Kategorija.komunalije, // održavanje zgrade
+        kategorija: Kategorija.komunalije,
         provajder: 'OKI Upravitelj',
-        iznos: iznos ?? 0,
-        datumIzdavanja: datumIzdavanja,
-        datumDospijeca: datumDospijeca,
+        iznos: 0, // popunjava se ispod jedinstvenim iznosom
+        datumIzdavanja: periodOd,
+        datumDospijeca: periodDo,
         pozivNaBroj: pozivNaBroj,
         periodOd: periodOd,
         periodDo: periodDo,
@@ -75,24 +58,50 @@ class OkiParser {
       );
     }
 
+    // Iznos: tražimo vrijednost s TAČNO 2 decimale (npr. "15,00"), koja
+    // je ukupan iznos uplatnice. Stavke imaju 4 decimale (1,8000) pa ih
+    // ignorišemo. Svi mjeseci imaju isti iznos, pa uzimamo najčešći.
+    final iznos = _ukupanIznos(tekst);
+    final iznosFinal = iznos ?? 0;
+    for (var i = 0; i < racuni.length; i++) {
+      racuni[i] = racuni[i].copyWith(iznos: iznosFinal);
+    }
+
     final upozorenja = <String>[];
-    if (racuni.any((r) => r.iznos == 0)) {
-      upozorenja.add('Za neke mjesece iznos nije pročitan - provjerite.');
+    if (iznos == null) {
+      upozorenja.add('Iznos nije pročitan - provjerite ručno.');
     }
 
     return RezultatParsiranja.vise(racuni, upozorenja: upozorenja);
   }
 
-  /// Nalazi prvi novčani iznos (npr. "15,00") poslije date pozicije.
-  static double? _iznosUzBlok(String tekst, int odPozicije) {
-    final dio = tekst.substring(odPozicije);
-    final m = RegExp(r'(\d{1,3}(?:\.\d{3})*,\d{2})').firstMatch(dio);
-    if (m == null) return null;
-    return _broj(m.group(1)!);
+  /// Nalazi ukupan iznos uplatnice: vrijednost s tačno 2 decimale
+  /// (npr. "15,00"), ne 4-decimalne stavke (1,8000).
+  static double? _ukupanIznos(String tekst) {
+    // Brojevi oblika X,XX ali NE X,XXXX (negativni lookahead na 3. decimalu).
+    final re = RegExp(r'(?<!\d)(\d{1,4},\d{2})(?!\d)');
+    final brojac = <double, int>{};
+    for (final m in re.allMatches(tekst)) {
+      final b = _broj(m.group(1)!);
+      if (b != null && b > 0) {
+        brojac[b] = (brojac[b] ?? 0) + 1;
+      }
+    }
+    if (brojac.isEmpty) return null;
+    // Najčešći iznos (svi mjeseci imaju isti, npr. 15,00 se javlja više puta).
+    double najcesci = brojac.keys.first;
+    int maks = 0;
+    brojac.forEach((iznos, broj) {
+      if (broj > maks) {
+        maks = broj;
+        najcesci = iznos;
+      }
+    });
+    return najcesci;
   }
 
   static double? _broj(String s) {
-    final ocisceno = s.trim().replaceAll('.', '').replaceAll(',', '.');
-    return double.tryParse(ocisceno);
+    final o = s.trim().replaceAll('.', '').replaceAll(',', '.');
+    return double.tryParse(o);
   }
 }

@@ -4,17 +4,16 @@ import 'rezultat_parsiranja.dart';
 
 /// Parser za Telemach BH račune (internet + TV).
 ///
-/// Radi nad tekstom izvučenim iz PDF-a. Telemach račun ima prepoznatljive
-/// oznake ("Poziv na broj", "Period izvršenja usluga", "Rok za plaćanje",
-/// red "Račun za <MJESEC>" s iznosom). Parser je napisan tolerantno jer
-/// različite PDF biblioteke mogu malo drugačije dekodirati slova i razmake.
+/// Prilagođen tekstu koji izvlači `syncfusion_flutter_pdf`: labela i
+/// vrijednost su u odvojenim redovima, npr:
+///   "Poziv na broj:"  (red)
+///   "650564246202609" (sljedeći red)
+/// a stavke računa su svaka u svom redu (zadnji broj = ukupno s PDV-om).
 class TelemachParser {
   /// Da li tekst izgleda kao Telemach račun.
   static bool prepoznaje(String tekst) {
     final t = tekst.toLowerCase();
-    return t.contains('telemach') ||
-        t.contains('billbymail.telemach') ||
-        (t.contains('poziv na broj') && t.contains('eon'));
+    return t.contains('telemach') || t.contains('eon full');
   }
 
   /// Parsira tekst Telemach računa u [Racun].
@@ -24,74 +23,86 @@ class TelemachParser {
     }
 
     final upozorenja = <String>[];
-
-    // Normalizuj: jedinstveni razmaci, ali zadrži nove redove.
     final linije = tekst
         .split(RegExp(r'[\r\n]+'))
         .map((l) => l.trim())
         .where((l) => l.isNotEmpty)
         .toList();
-    final spojeno = linije.join('\n');
 
-    // --- Poziv na broj (15 cifara, npr. 650564246202609) ---
-    String pozivNaBroj = '';
-    final mPoziv = RegExp(
-      r'poziv\s*na\s*broj\s*:?\s*([0-9]{6,})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mPoziv != null) {
-      pozivNaBroj = mPoziv.group(1)!.trim();
-    } else {
-      upozorenja.add('Nije pronađen "Poziv na broj".');
+    // Vrijednost koja slijedi poslije labele. U syncfusion formatu je
+    // labela u svom redu (završava s ":"), a vrijednost u sljedećem.
+    String? vrijednostPoslije(String labelaRegex) {
+      final re = RegExp(labelaRegex, caseSensitive: false);
+      for (int i = 0; i < linije.length; i++) {
+        if (re.hasMatch(linije[i])) {
+          // Ako iza dvotačke na ISTOM redu ima pravog sadržaja, uzmi to.
+          final idx = linije[i].indexOf(':');
+          if (idx >= 0 && idx < linije[i].length - 1) {
+            final naIstom = linije[i].substring(idx + 1).trim();
+            if (naIstom.isNotEmpty) return naIstom;
+          }
+          // Inače vrijednost je u sljedećem ne-praznom redu.
+          if (i + 1 < linije.length) return linije[i + 1].trim();
+        }
+      }
+      return null;
     }
+
+    // --- Poziv na broj (npr. 650564246202609) ---
+    String pozivNaBroj = '';
+    final poz = vrijednostPoslije(r'^poziv\s*na\s*broj\s*:?$');
+    if (poz != null) {
+      final m = RegExp(r'\d{10,}').firstMatch(poz);
+      if (m != null) pozivNaBroj = m.group(0)!;
+    }
+    // Rezervno: nađi prvi 15-cifreni broj u tekstu.
+    if (pozivNaBroj.isEmpty) {
+      final m = RegExp(r'\b\d{15}\b').firstMatch(tekst);
+      if (m != null) pozivNaBroj = m.group(0)!;
+    }
+    if (pozivNaBroj.isEmpty) upozorenja.add('Nije pronađen poziv na broj.');
 
     // --- Period izvršenja usluga: 01.09.2026 - 30.09.2026 ---
     DateTime? periodOd;
     DateTime? periodDo;
-    final mPeriod = RegExp(
-      r'period[^\n:]*:?\s*(\d{1,2}\.\d{1,2}\.\d{4})\.?\s*[-–]\s*(\d{1,2}\.\d{1,2}\.\d{4})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mPeriod != null) {
-      periodOd = _datum(mPeriod.group(1)!);
-      periodDo = _datum(mPeriod.group(2)!);
-    } else {
-      upozorenja.add('Nije pronađen "Period izvršenja usluga".');
+    final per = vrijednostPoslije(r'period\s*izvr');
+    if (per != null) {
+      final m = RegExp(
+        r'(\d{1,2}\.\d{1,2}\.\d{4})\s*[-–]\s*(\d{1,2}\.\d{1,2}\.\d{4})',
+      ).firstMatch(per);
+      if (m != null) {
+        periodOd = _datum(m.group(1)!);
+        periodDo = _datum(m.group(2)!);
+      }
     }
 
     // --- Rok za plaćanje računa: 25.10.2026 ---
     DateTime? datumDospijeca;
-    final mRok = RegExp(
-      r'rok\s*za\s*pla[cć]anje[^\n]*?(\d{1,2}\.\d{1,2}\.\d{4})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mRok != null) {
-      datumDospijeca = _datum(mRok.group(1)!);
-    }
+    final rok = vrijednostPoslije(r'rok\s*za\s*pla');
+    if (rok != null) datumDospijeca = _datum(rok);
 
     // --- Datum izdavanja računa: 30.09.2026 ---
     DateTime? datumIzdavanja;
-    final mIzdavanje = RegExp(
-      r'datum\s*izdavanja[^\n]*?(\d{1,2}\.\d{1,2}\.\d{4})',
-      caseSensitive: false,
-    ).firstMatch(spojeno);
-    if (mIzdavanje != null) {
-      datumIzdavanja = _datum(mIzdavanje.group(1)!);
-    }
+    final izd = vrijednostPoslije(r'datum\s*izdavanja');
+    if (izd != null) datumIzdavanja = _datum(izd);
 
-    // --- Mjesečni iznos: red "Račun za <MJESEC> ... <iznos>" ---
-    // Format reda: "Račun za SEPTEMBAR 68,76 11,69 80,45"
-    // Uzimamo zadnji broj U TOM REDU (ukupno s PDV-om).
+    // --- Mjesečni iznos: red "Račun za <MJESEC>" pa 3 reda s brojevima.
+    //     Treći broj poslije labele je ukupno s PDV-om (npr. 80,45). ---
     double? mjesecniIznos;
-    int indeksRacunZa = -1;
     for (int i = 0; i < linije.length; i++) {
       if (RegExp(r'ra[cč]un\s*za\s+[a-zžčćđš]', caseSensitive: false)
           .hasMatch(linije[i])) {
-        indeksRacunZa = i;
-        final brojevi = _sviBrojevi(linije[i]);
-        if (brojevi.isNotEmpty) {
-          mjesecniIznos = brojevi.last; // zadnji broj u redu = ukupno s PDV-om
+        // Skupi iduće redove koji su čisti novčani iznosi.
+        final iznosi = <double>[];
+        for (int j = i + 1; j < linije.length && iznosi.length < 3; j++) {
+          final b = _novac(linije[j]);
+          if (b != null) {
+            iznosi.add(b);
+          } else {
+            break; // prekini na prvom ne-novčanom redu
+          }
         }
+        if (iznosi.isNotEmpty) mjesecniIznos = iznosi.last;
         break;
       }
     }
@@ -99,39 +110,36 @@ class TelemachParser {
       upozorenja.add('Nije pronađen mjesečni iznos - unesite ručno.');
     }
 
-    // --- Ukupno za uplatu (trenutno stanje: dug ili pretplata) ---
-    // Na Telemach računu iznos za uplatu NEMA labelu - to je "goli" novčani
-    // iznos koji stoji sam u svom redu, prvi POSLIJE reda "Račun za ...".
-    // Red "Prethodno dugovanje ..." se preskače (to je dug, ne ukupno).
-    // Primjeri: septembar -> "0,00"; juli -> "241,35" (80,45 + 160,90 duga).
+    // --- Ukupno za uplatu (dug ili pretplata) ---
+    // Ako postoji "Prethodno dugovanje", za uplatu = mjesečni + dug.
+    // Inače ostaje null (koristi se mjesečni iznos).
     double? iznosZaUplatu;
-    if (indeksRacunZa >= 0) {
-      for (int i = indeksRacunZa + 1;
-          i < linije.length && i <= indeksRacunZa + 4;
-          i++) {
-        final l = linije[i];
-        if (l.toLowerCase().contains('dugovanje')) continue;
-        if (RegExp(r'^\d{1,3}(?:\.\d{3})*,\d{2}$').hasMatch(l)) {
-          iznosZaUplatu = _broj(l);
-          break;
+    for (int i = 0; i < linije.length; i++) {
+      if (RegExp(r'prethodno\s*dugovanje', caseSensitive: false)
+          .hasMatch(linije[i])) {
+        // Iznos duga je u ovom ili sljedećem redu.
+        double? dug = _novac(linije[i]);
+        if (dug == null && i + 1 < linije.length) {
+          dug = _novac(linije[i + 1]);
         }
+        if (dug != null && mjesecniIznos != null) {
+          iznosZaUplatu = mjesecniIznos + dug;
+        }
+        break;
       }
     }
 
-    // Ako nemamo ni mjesečni iznos ni datume, parsiranje nije uspjelo.
     if (mjesecniIznos == null && datumIzdavanja == null) {
       return RezultatParsiranja.neuspjeh(
-        'Ovo ne izgleda kao prepoznatljiv Telemach račun. '
-        'Provjerite PDF ili unesite podatke ručno.',
+        'Ovo ne izgleda kao prepoznatljiv Telemach račun.',
       );
     }
 
-    // Razumne zamjene za datume koji nedostaju.
     datumIzdavanja ??= periodDo ?? DateTime.now();
     datumDospijeca ??= datumIzdavanja.add(const Duration(days: 25));
 
     final racun = Racun(
-      kategorija: Kategorija.internet, // Telemach = internet + TV
+      kategorija: Kategorija.internet,
       provajder: 'Telemach',
       iznos: mjesecniIznos ?? 0,
       datumIzdavanja: datumIzdavanja,
@@ -148,29 +156,28 @@ class TelemachParser {
 
   // ----- Pomoćne funkcije -----
 
-  /// Parsira datum formata "dd.mm.yyyy".
   static DateTime? _datum(String s) {
     final m = RegExp(r'(\d{1,2})\.(\d{1,2})\.(\d{4})').firstMatch(s);
     if (m == null) return null;
-    final dan = int.parse(m.group(1)!);
-    final mjesec = int.parse(m.group(2)!);
-    final godina = int.parse(m.group(3)!);
-    return DateTime(godina, mjesec, dan);
+    return DateTime(
+      int.parse(m.group(3)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(1)!),
+    );
   }
 
-  /// Pretvara string s bosanskim decimalnim zarezom ("80,45") u double.
+  /// Pretvara string u double (bosanski zarez: "80,45").
   static double? _broj(String s) {
-    final ocisceno = s.trim().replaceAll('.', '').replaceAll(',', '.');
-    return double.tryParse(ocisceno);
+    final o = s.trim().replaceAll('.', '').replaceAll(',', '.');
+    return double.tryParse(o);
   }
 
-  /// Nalazi sve novčane brojeve (npr. "68,76", "11,69", "80,45") u tekstu.
-  static List<double> _sviBrojevi(String s) {
-    final rezultat = <double>[];
-    for (final m in RegExp(r'\d{1,3}(?:\.\d{3})*,\d{2}').allMatches(s)) {
-      final b = _broj(m.group(0)!);
-      if (b != null) rezultat.add(b);
+  /// Vraća iznos SAMO ako je cijeli red čist novčani iznos (npr. "80,45").
+  static double? _novac(String red) {
+    final t = red.trim();
+    if (RegExp(r'^\d{1,3}(?:\.\d{3})*,\d{2}$').hasMatch(t)) {
+      return _broj(t);
     }
-    return rezultat;
+    return null;
   }
 }
