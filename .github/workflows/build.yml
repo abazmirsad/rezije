@@ -10,6 +10,8 @@ jobs:
   build-apk:
     name: Napravi Android APK
     runs-on: ubuntu-latest
+    env:
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
 
     steps:
       # 1. Preuzmi kod iz repozitorija
@@ -38,7 +40,6 @@ jobs:
         run: flutter create --platforms=android --project-name rezije .
 
       # 4b. Postavi compileSdk/targetSdk 36 (sqflite zahtijeva 36).
-      #     Zamjenjujemo Flutter placeholdere u app build.gradle.kts.
       - name: Podesi Android SDK verzije
         run: |
           APP=android/app/build.gradle.kts
@@ -46,6 +47,72 @@ jobs:
           sed -i 's/targetSdk = flutter.targetSdkVersion/targetSdk = 36/' "$APP"
           echo "----- app build.gradle.kts -----"
           grep -E 'compileSdk|targetSdk|minSdk' "$APP"
+
+      # 4c. Konfiguriši potpisivanje fiksnim keystore-om iz GitHub Secrets.
+      #     Daje STABILAN SHA-1 (potreban za Google/Gmail OAuth).
+      #     Ako secret KEYSTORE_BASE64 ne postoji, preskače (debug potpis).
+      - name: Konfiguriši potpisni ključ
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          # Dekodiraj keystore u android/app/
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/rezije-release.jks
+
+          # Napiši key.properties
+          cat > android/key.properties <<EOF
+          storePassword=$KEYSTORE_PASSWORD
+          keyPassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          storeFile=rezije-release.jks
+          EOF
+
+          # Ubaci signing config u app/build.gradle.kts (Kotlin DSL).
+          APP=android/app/build.gradle.kts
+          python3 - "$APP" <<'PY'
+          import sys, re
+          p = sys.argv[1]
+          s = open(p, encoding='utf-8').read()
+
+          # Učitaj key.properties na vrh (poslije plugins bloka).
+          loader = '''
+          import java.util.Properties
+          import java.io.FileInputStream
+          val keystoreProperties = Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+          }
+          '''
+          # Ubaci loader prije "android {"
+          s = s.replace("android {", loader + "\nandroid {", 1)
+
+          # Dodaj signingConfigs i veži na release unutar android { }.
+          signing = '''
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }
+          '''
+          # Ubaci signingConfigs odmah poslije prve "android {".
+          s = s.replace("android {", "android {\n" + signing, 1)
+
+          # Postavi release buildType da koristi release potpis.
+          s = re.sub(r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
+                     'signingConfig = signingConfigs.getByName("release")', s)
+
+          open(p, 'w', encoding='utf-8').write(s)
+          print("Signing config ubačen.")
+          PY
+
+          echo "----- app build.gradle.kts (signing) -----"
+          grep -n 'signingConfig' "$APP" || true
 
       # 5. Preuzmi pakete (dependencies)
       - name: Preuzmi pakete
