@@ -53,6 +53,8 @@ class RezijeProvider extends ChangeNotifier {
       'assets/uzorci/gas_508055.pdf',
       'assets/uzorci/gas_656644.pdf',
       'assets/uzorci/oki_10_12.pdf', // 1 PDF = 3 računa
+      'assets/uzorci/struja_29076.pdf',
+      'assets/uzorci/struja_29096.pdf',
     ];
 
     final izvjestaj = StringBuffer();
