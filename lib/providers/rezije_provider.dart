@@ -76,10 +76,19 @@ class RezijeProvider extends ChangeNotifier {
             );
           }
         } else {
+          // DIJAGNOSTIKA: prikaži sirovi tekst koji syncfusion izvuče,
+          // da vidimo zašto parser ne prepoznaje račun.
+          final siroviTekst = PdfServis.izvuciTekst(bajtovi);
+          final isjecak = siroviTekst.length > 400
+              ? siroviTekst.substring(0, 400)
+              : siroviTekst;
           izvjestaj.writeln(
-            '✗ ${putanja.split("/").last}: '
-            '${rez.upozorenja.isNotEmpty ? rez.upozorenja.first : "nije parsirano"}',
+            '✗ ${putanja.split("/").last} '
+            '(izvučeno ${siroviTekst.length} znakova):',
           );
+          izvjestaj.writeln('--- TEKST ---');
+          izvjestaj.writeln(isjecak.isEmpty ? '(PRAZNO)' : isjecak);
+          izvjestaj.writeln('--- kraj ---');
         }
       } catch (e) {
         izvjestaj.writeln('✗ ${putanja.split("/").last}: greška ($e)');
